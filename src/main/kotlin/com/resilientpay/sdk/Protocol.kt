@@ -1,5 +1,7 @@
 package com.resilientpay.sdk
 
+import uniffi.resilientpay_core.ResilientPayClient as RustClient
+
 /**
  * Result of a transport transmission.
  */
@@ -13,52 +15,73 @@ sealed class TransportResult {
  * Transport logic is completely isolated from the core SDK and state machine.
  */
 interface TransportAdapter {
-    /**
-     * Sends the transaction envelope bytes to the merchant or backend.
-     */
     fun send(txBytes: ByteArray): TransportResult
 }
 
-/**
- * Internet fallback adapter.
- */
+// Stubs for adapters...
 class InternetAdapter : TransportAdapter {
-    override fun send(txBytes: ByteArray): TransportResult {
-        // TODO: Implement HTTP POST
-        return TransportResult.Error("not implemented")
-    }
+    override fun send(txBytes: ByteArray): TransportResult = TransportResult.Error("not implemented")
 }
 
-/**
- * NFC transport adapter.
- */
 class NfcAdapter : TransportAdapter {
-    override fun send(txBytes: ByteArray): TransportResult {
-        // TODO: Implement ISO-DEP / HCE
-        return TransportResult.Error("not implemented")
-    }
+    override fun send(txBytes: ByteArray): TransportResult = TransportResult.Error("not implemented")
 }
 
-/**
- * Bluetooth Low Energy (BLE) transport adapter.
- */
 class BleAdapter : TransportAdapter {
-    override fun send(txBytes: ByteArray): TransportResult {
-        // TODO: Implement BLE GATT
-        return TransportResult.Error("not implemented")
-    }
+    override fun send(txBytes: ByteArray): TransportResult = TransportResult.Error("not implemented")
 }
 
 /**
  * The core ResilientPay Android protocol entrypoint.
- * Receives the transport adapter to enforce the architectural boundary.
+ * Manages the FFI boundary (Rust core) and handles the transport bridging.
  */
-class ResilientPayClient(private val transport: TransportAdapter) {
+class ResilientPayClient(
+    private val transport: TransportAdapter,
+    keyManager: HardwareKeyManager = HardwareKeyManager()
+) : AutoCloseable {
     
+    // Persistent Native Client retaining the Kotlin callback over JNI
+    private val nativeClient = RustClient(keyManager)
+
     /**
-     * Submits a signed transaction using the configured transport.
+     * Orchestrates a full transaction:
+     * 1. Calls Rust via FFI to canonicalize bytes
+     * 2. Rust calls back into Android Keystore to sign
+     * 3. Rust returns the signed JSON payload
+     * 4. Android transmits the JSON via the injected transport
      */
-    fun submitTransaction(txBytes: ByteArray): TransportResult {
-        return transport.send(txBytes)
+    fun createAndSubmitTransaction(
+        txIdStr: String,
+        credentialIdStr: String,
+        payerKeyIdStr: String,
+        merchantIdStr: String,
+        amountMinor: Long,
+        counter: Long,
+        nonceBytes: ByteArray,
+        createdAtUnix: Long,
+        expiresAtUnix: Long
+    ): TransportResult {
+        return try {
+            val signedEnvelopeBytes = nativeClient.createTransaction(
+                txIdStr = txIdStr,
+                credentialIdStr = credentialIdStr,
+                payerKeyIdStr = payerKeyIdStr,
+                merchantIdStr = merchantIdStr,
+                amountMinor = amountMinor.toULong(),
+                counter = counter.toULong(),
+                nonceBytes = nonceBytes,
+                createdAtUnix = createdAtUnix,
+                expiresAtUnix = expiresAtUnix
+            )
+            
+            // Send exactly what Rust produced
+            transport.send(signedEnvelopeBytes)
+        } catch (e: Exception) {
+            TransportResult.Error("FFI or Transaction error: ${e.message}")
+        }
+    }
+
+    override fun close() {
+        nativeClient.close()
     }
 }
