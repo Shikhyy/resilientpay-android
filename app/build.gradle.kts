@@ -63,4 +63,5 @@ dependencies {
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.01.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     implementation("net.java.dev.jna:jna:5.13.0@aar")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
 }

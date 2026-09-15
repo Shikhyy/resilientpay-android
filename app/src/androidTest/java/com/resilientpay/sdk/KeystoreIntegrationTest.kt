@@ -108,4 +108,21 @@ class KeystoreIntegrationTest {
             assertTrue(e.message?.contains("not found") == true || e.message?.contains("SigningFailure") == true)
         }
     }
+
+    @Test
+    fun testFrozenVectorSigningAndVerification() {
+        val keyManager = HardwareKeyManager()
+        val FROZEN_SEED_HEX = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
+        val FROZEN_PUBKEY_HEX = "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29"
+        val FROZEN_SIGNATURE_HEX = "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+        val FROZEN_KEY_ID = "00000000-0000-0000-0000-000000000003"
+
+        keyManager.importSeed(FROZEN_KEY_ID, decodeHex(FROZEN_SEED_HEX))
+        val pubKey = keyManager.getPublicKey(FROZEN_KEY_ID)
+        assertArrayEquals(decodeHex(FROZEN_PUBKEY_HEX), pubKey)
+
+        val payload = DOMAIN_SEP.toByteArray() + decodeHex(EXPECTED_CBOR_HEX)
+        val signature = keyManager.sign(FROZEN_KEY_ID, payload)
+        assertArrayEquals(decodeHex(FROZEN_SIGNATURE_HEX), signature)
+    }
 }

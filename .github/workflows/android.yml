@@ -45,8 +45,14 @@ jobs:
         with:
           toolchain: 1.93.1
           
+      - name: Cache cargo-ndk
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/bin/cargo-ndk
+          key: ${{ runner.os }}-cargo-ndk-bin
+
       - name: Install cargo-ndk
-        run: cargo install cargo-ndk
+        run: which cargo-ndk || cargo install cargo-ndk
         
       - name: Add Android Rust Targets
         run: rustup target add aarch64-linux-android x86_64-linux-android
@@ -56,6 +62,11 @@ jobs:
           repository: Shikhyy/ResilientPay
           ref: feat/android-sdk-ffi-integration
           path: core
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/sdk/core -> target
           
       - name: Build Rust Native Libs
         env:
@@ -72,10 +83,15 @@ jobs:
           arch: x86_64
           target: google_apis
           profile: pixel
+          disable-animations: true
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -camera-back none
           script: |
             java -version
             ./gradlew --version
             adb version
+            adb shell settings put global window_animation_scale 0.0
+            adb shell settings put global transition_animation_scale 0.0
+            adb shell settings put global animator_duration_scale 0.0
             adb shell getprop ro.build.version.sdk
             adb shell getprop ro.product.cpu.abi
             ./gradlew connectedAndroidTest

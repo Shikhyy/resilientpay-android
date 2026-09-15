@@ -47,8 +47,8 @@ class ResilientPayClient(
      * Orchestrates a full transaction:
      * 1. Calls Rust via FFI to canonicalize bytes
      * 2. Rust calls back into Android Keystore to sign
-     * 3. Rust returns the signed JSON payload
-     * 4. Android transmits the JSON via the injected transport
+     * 3. Rust returns the signed CBOR payload
+     * 4. Android transmits the bytes via the injected transport
      */
     fun createAndSubmitTransaction(
         txIdStr: String,
