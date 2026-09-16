@@ -121,7 +121,7 @@ class HardwareKeyManager : AndroidKeyManager {
         if (requireStrongBox) {
             aesBuilder.setIsStrongBoxBacked(true)
         }
-        kg.initialize(aesBuilder.build())
+        kg.init(aesBuilder.build())
         val aesKey = kg.generateKey()
 
         // 3. Generate fresh 32-byte Ed25519 seed
@@ -170,7 +170,7 @@ class HardwareKeyManager : AndroidKeyManager {
         if (requireStrongBox) {
             aesBuilder.setIsStrongBoxBacked(true)
         }
-        kg.initialize(aesBuilder.build())
+        kg.init(aesBuilder.build())
         val aesKey = kg.generateKey()
 
         // Derive public key
