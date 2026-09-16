@@ -31,6 +31,16 @@ class BleAdapter : TransportAdapter {
     override fun send(txBytes: ByteArray): TransportResult = TransportResult.Error("not implemented")
 }
 
+class QrAdapter : TransportAdapter {
+    override fun send(txBytes: ByteArray): TransportResult = TransportResult.Error("not implemented")
+}
+
+class SmsAdapter(
+    val gatewayNumber: String = "+910000000000"
+) : TransportAdapter {
+    override fun send(txBytes: ByteArray): TransportResult = TransportResult.Error("not implemented")
+}
+
 /**
  * The core ResilientPay Android protocol entrypoint.
  * Manages the FFI boundary (Rust core) and handles the transport bridging.
