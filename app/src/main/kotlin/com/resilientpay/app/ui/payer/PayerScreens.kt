@@ -23,6 +23,8 @@ fun PayerHomeScreen(
     offlineBalanceMinor: Long,
     connectivity: ConnectivityMode,
     transactions: List<LocalPaymentRecord>,
+    perTxLimitMinor: Long = 50000L,
+    counterCeiling: Long = 1000L,
     onInitiatePayment: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -126,11 +128,11 @@ fun PayerHomeScreen(
                         }
                         Column {
                             Text("PER-TX LIMIT", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = ResilientSlate)
-                            Text(formatPaise(50000), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ResilientInk)
+                            Text(formatPaise(perTxLimitMinor), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ResilientInk)
                         }
                         Column {
                             Text("COUNTER CEILING", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = ResilientSlate)
-                            Text("#1,000 max", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ResilientInk)
+                            Text("#$counterCeiling max", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ResilientInk)
                         }
                     }
                 }
@@ -289,12 +291,14 @@ private val ResilientPayThemeShapes = Shapes(
 @Composable
 fun PaymentCreationScreen(
     offlineBalanceMinor: Long,
+    initialMerchantId: String = "",
+    perTxLimitMinor: Long = 50000L,
     onCancel: () -> Unit,
     onProceedToAuthorize: (amountMinor: Long, merchantId: String, transport: TransportSelection) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var amountInput by remember { mutableStateOf("") }
-    var merchantId by remember { mutableStateOf("00000000-0000-0000-0000-000000000004") }
+    var merchantId by remember { mutableStateOf(initialMerchantId) }
     var selectedTransport by remember { mutableStateOf(TransportSelection.NFC) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -476,6 +480,8 @@ fun PaymentCreationScreen(
                         errorMessage = "Amount must be greater than zero"
                     } else if (amountMinor > offlineBalanceMinor) {
                         errorMessage = "Amount exceeds available offline balance"
+                    } else if (amountMinor > perTxLimitMinor) {
+                        errorMessage = "Amount exceeds per-transaction limit (${formatPaise(perTxLimitMinor)})"
                     } else if (merchantId.isBlank()) {
                         errorMessage = "Merchant ID cannot be empty"
                     } else {

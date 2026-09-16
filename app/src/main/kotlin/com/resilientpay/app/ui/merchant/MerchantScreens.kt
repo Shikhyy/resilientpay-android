@@ -380,6 +380,7 @@ fun MerchantHomeScreen(
 @Composable
 fun MerchantReceiveScreen(
     merchantId: String,
+    defaultPayerId: String = "payer-device-bound-id",
     onCancel: () -> Unit,
     onPaymentReceivedLocally: (amountMinor: Long, payerId: String, transport: String) -> Unit,
     modifier: Modifier = Modifier
@@ -625,7 +626,7 @@ fun MerchantReceiveScreen(
                         // Simulate receiving transaction from Payer
                         onPaymentReceivedLocally(
                             amountMinor,
-                            "00000000-0000-0000-0000-000000000001",
+                            defaultPayerId,
                             selectedTransport.protocolName
                         )
                     }

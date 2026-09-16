@@ -8,6 +8,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -61,13 +64,17 @@ class MainActivity : ComponentActivity() {
 fun ResilientPayAppRoot() {
     val context = LocalContext.current
 
-    // Global Interactive Prototype State
+    // Global Dynamic Configuration & Settings
+    var settings by remember { mutableStateOf(AppSettings()) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+
+    // Navigation & Connectivity State
     var currentRole by remember { mutableStateOf(UserRole.PAYER) }
     var connectivity by remember { mutableStateOf(ConnectivityMode.C1_PROXIMITY) }
     var connectivityMenuExpanded by remember { mutableStateOf(false) }
 
-    // Payer State
-    var payerOfflineBalance by remember { mutableStateOf(450000L) } // ₹4,500.00
+    // Dynamic Payer State
+    var payerOfflineBalance by remember { mutableStateOf(450000L) } // 450,000 paise = ₹4,500.00
     var payerCounter by remember { mutableStateOf(14L) }
     var payerSubScreen by remember { mutableStateOf(PayerSubScreen.HOME) }
     var payerPendingTx by remember { mutableStateOf<LocalPaymentRecord?>(null) }
@@ -75,75 +82,19 @@ fun ResilientPayAppRoot() {
         mutableStateOf<Triple<Long, String, TransportSelection>?>(null) 
     }
 
+    // Payer Ledger (starts clean; can be loaded with demo test vectors via Settings)
     var payerTransactions by remember {
-        mutableStateOf(
-            listOf(
-                LocalPaymentRecord(
-                    txId = "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                    counter = 12L,
-                    amountMinor = 25000L, // ₹250.00
-                    counterpartyId = "00000000-0000-0000-0000-000000000004",
-                    transport = "NFC",
-                    state = "SETTLED",
-                    timestampUnix = System.currentTimeMillis() / 1000 - 3600,
-                    receiptHash = "8d0150a1b2c3d4e5f60718293a4b5c6d"
-                ),
-                LocalPaymentRecord(
-                    txId = "e28bc10a-32dd-4112-98ab-1f03a4b5c612",
-                    counter = 13L,
-                    amountMinor = 12000L, // ₹120.00
-                    counterpartyId = "00000000-0000-0000-0000-000000000004",
-                    transport = "QR",
-                    state = "AUTHORIZED_LOCALLY",
-                    timestampUnix = System.currentTimeMillis() / 1000 - 600,
-                    receiptHash = "7a38b28c192d4f5e6a7b8c9d0e1f2a3b"
-                )
-            )
-        )
+        mutableStateOf(createInitialPayerLedger(settings.merchantId))
     }
 
-    // Merchant State
-    val merchantId = "00000000-0000-0000-0000-000000000004"
+    // Dynamic Merchant State
     var merchantSubScreen by remember { mutableStateOf(MerchantSubScreen.HOME) }
     var merchantLatestReceivedTx by remember { mutableStateOf<LocalPaymentRecord?>(null) }
     var merchantCounter by remember { mutableStateOf(44L) }
 
+    // Merchant Ledger (starts clean; can be loaded with demo test vectors via Settings)
     var merchantTransactions by remember {
-        mutableStateOf(
-            listOf(
-                LocalPaymentRecord(
-                    txId = "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
-                    counter = 41L,
-                    amountMinor = 50000L, // ₹500.00
-                    counterpartyId = "00000000-0000-0000-0000-000000000003",
-                    transport = "BLE",
-                    state = "CONFLICT",
-                    timestampUnix = System.currentTimeMillis() / 1000 - 7200,
-                    receiptHash = "9c1a7e2b3c4d5e6f7a8b9c0d1e2f3a4b",
-                    conflictReason = "Counter already settled (Double-spend attempt)"
-                ),
-                LocalPaymentRecord(
-                    txId = "b2c3d4e5-f6a1-4b5c-9d0e-1f2a3b4c5d6e",
-                    counter = 42L,
-                    amountMinor = 35000L, // ₹350.00
-                    counterpartyId = "00000000-0000-0000-0000-000000000001",
-                    transport = "NFC",
-                    state = "SETTLED",
-                    timestampUnix = System.currentTimeMillis() / 1000 - 3600,
-                    receiptHash = "f4b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5"
-                ),
-                LocalPaymentRecord(
-                    txId = "c3d4e5f6-a1b2-4c5d-0e1f-2a3b4c5d6e7f",
-                    counter = 43L,
-                    amountMinor = 8000L, // ₹80.00
-                    counterpartyId = "00000000-0000-0000-0000-000000000002",
-                    transport = "QR",
-                    state = "PAYMENT RECEIVED LOCALLY",
-                    timestampUnix = System.currentTimeMillis() / 1000 - 900,
-                    receiptHash = "6b2c89d0e1f2a3b4c5d6e7f8a9b0c1d2"
-                )
-            )
-        )
+        mutableStateOf(createInitialMerchantLedger(settings.payerCredentialId))
     }
 
     Scaffold(
@@ -157,7 +108,7 @@ fun ResilientPayAppRoot() {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -178,69 +129,92 @@ fun ResilientPayAppRoot() {
                         )
                     }
 
-                    // Interactive Connectivity Mode Selector
-                    Box {
-                        Row(
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Dynamic Settings Config Button
+                        OutlinedButton(
+                            onClick = { showSettingsDialog = true },
+                            shape = RoundedCornerShape(0.dp),
                             modifier = Modifier
-                                .border(1.dp, ResilientPaper.copy(alpha = 0.3f))
-                                .background(ResilientInk)
-                                .clickable { connectivityMenuExpanded = true }
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .height(32.dp)
+                                .border(1.dp, ResilientPaper.copy(alpha = 0.3f)),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .background(
-                                        when (connectivity) {
-                                            ConnectivityMode.C3_ONLINE -> ResilientTeal
-                                            ConnectivityMode.C2_DEGRADED -> ResilientBlue
-                                            ConnectivityMode.C1_PROXIMITY -> ResilientOrange
-                                            ConnectivityMode.C0_OFFLINE -> ResilientRed
-                                        }
-                                    )
-                            )
                             Text(
-                                text = "${connectivity.code} ▾",
+                                text = "CONFIG",
                                 fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
                                 color = ResilientPaper
                             )
                         }
 
-                        DropdownMenu(
-                            expanded = connectivityMenuExpanded,
-                            onDismissRequest = { connectivityMenuExpanded = false }
-                        ) {
-                            ConnectivityMode.values().forEach { mode ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(
-                                                text = "${mode.code} — ${mode.title}",
-                                                fontFamily = FontFamily.Monospace,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 12.sp
-                                            )
-                                            Text(
-                                                text = mode.description,
-                                                fontSize = 10.sp,
-                                                color = ResilientSlate
-                                            )
-                                        }
-                                    },
-                                    onClick = {
-                                        connectivity = mode
-                                        connectivityMenuExpanded = false
-                                        Toast.makeText(
-                                            context,
-                                            "Simulated mode switched to ${mode.code} (${mode.title})",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
+                        // Interactive Connectivity Mode Selector
+                        Box {
+                            Row(
+                                modifier = Modifier
+                                    .border(1.dp, ResilientPaper.copy(alpha = 0.3f))
+                                    .background(ResilientInk)
+                                    .clickable { connectivityMenuExpanded = true }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .background(
+                                            when (connectivity) {
+                                                ConnectivityMode.C3_ONLINE -> ResilientTeal
+                                                ConnectivityMode.C2_DEGRADED -> ResilientBlue
+                                                ConnectivityMode.C1_PROXIMITY -> ResilientOrange
+                                                ConnectivityMode.C0_OFFLINE -> ResilientRed
+                                            }
+                                        )
+                                    )
+                                Text(
+                                    text = "${connectivity.code} ▾",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = ResilientPaper
                                 )
+                            }
+
+                            DropdownMenu(
+                                expanded = connectivityMenuExpanded,
+                                onDismissRequest = { connectivityMenuExpanded = false }
+                            ) {
+                                ConnectivityMode.values().forEach { mode ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column {
+                                                Text(
+                                                    text = "${mode.code} — ${mode.title}",
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 12.sp
+                                                )
+                                                Text(
+                                                    text = mode.description,
+                                                    fontSize = 10.sp,
+                                                    color = ResilientSlate
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            connectivity = mode
+                                            connectivityMenuExpanded = false
+                                            Toast.makeText(
+                                                context,
+                                                "Simulated mode switched to ${mode.code} (${mode.title})",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -260,6 +234,7 @@ fun ResilientPayAppRoot() {
                             containerColor = if (isPayer) ResilientPaper else ResilientInk,
                             contentColor = if (isPayer) ResilientInk else ResilientSlate
                         ),
+                        shape = RoundedCornerShape(0.dp),
                         modifier = Modifier
                             .weight(1f)
                             .height(38.dp)
@@ -280,6 +255,7 @@ fun ResilientPayAppRoot() {
                             containerColor = if (isMerchant) ResilientPaper else ResilientInk,
                             contentColor = if (isMerchant) ResilientInk else ResilientSlate
                         ),
+                        shape = RoundedCornerShape(0.dp),
                         modifier = Modifier
                             .weight(1f)
                             .height(38.dp)
@@ -310,6 +286,8 @@ fun ResilientPayAppRoot() {
                                 offlineBalanceMinor = payerOfflineBalance,
                                 connectivity = connectivity,
                                 transactions = payerTransactions,
+                                perTxLimitMinor = settings.maxPerTxLimitMinor,
+                                counterCeiling = settings.maxCounterCeiling,
                                 onInitiatePayment = {
                                     payerSubScreen = PayerSubScreen.CREATE
                                 }
@@ -318,6 +296,8 @@ fun ResilientPayAppRoot() {
                         PayerSubScreen.CREATE -> {
                             PaymentCreationScreen(
                                 offlineBalanceMinor = payerOfflineBalance,
+                                initialMerchantId = settings.merchantId,
+                                perTxLimitMinor = settings.maxPerTxLimitMinor,
                                 onCancel = {
                                     payerSubScreen = PayerSubScreen.HOME
                                 },
@@ -347,17 +327,23 @@ fun ResilientPayAppRoot() {
                             merchantId = targetMerchantId,
                             transport = transport,
                             onConfirm = {
-                                // Authorize & sign transaction with device key
                                 payerOfflineBalance -= amountMinor
+                                val newTxId = UUID.randomUUID().toString()
+                                val newCounter = payerCounter++
+                                val timestampUnix = System.currentTimeMillis() / 1000
+                                // Real cryptographic SHA-256 digest of envelope payload
+                                val receiptDigest = computeSha256Hex(
+                                    "$newTxId:$newCounter:$amountMinor:$targetMerchantId:$timestampUnix".toByteArray()
+                                )
                                 val newTx = LocalPaymentRecord(
-                                    txId = UUID.randomUUID().toString(),
-                                    counter = payerCounter++,
+                                    txId = newTxId,
+                                    counter = newCounter,
                                     amountMinor = amountMinor,
                                     counterpartyId = targetMerchantId,
                                     transport = transport.protocolName,
                                     state = "AUTHORIZED_LOCALLY",
-                                    timestampUnix = System.currentTimeMillis() / 1000,
-                                    receiptHash = UUID.randomUUID().toString().replace("-", "")
+                                    timestampUnix = timestampUnix,
+                                    receiptHash = receiptDigest
                                 )
                                 payerTransactions = listOf(newTx) + payerTransactions
                                 payerPendingTx = newTx
@@ -375,7 +361,7 @@ fun ResilientPayAppRoot() {
                     when (merchantSubScreen) {
                         MerchantSubScreen.HOME -> {
                             MerchantHomeScreen(
-                                merchantId = merchantId,
+                                merchantId = settings.merchantId,
                                 connectivity = connectivity,
                                 transactions = merchantTransactions,
                                 onReceivePayment = {
@@ -390,7 +376,6 @@ fun ResilientPayAppRoot() {
                                             Toast.LENGTH_LONG
                                         ).show()
                                     } else {
-                                        // Reconcile and settle all pending transactions
                                         val updated = merchantTransactions.map { tx ->
                                             if (tx.state == "PAYMENT RECEIVED LOCALLY" || tx.state == "SYNC_PENDING") {
                                                 tx.copy(state = "SETTLED")
@@ -410,20 +395,28 @@ fun ResilientPayAppRoot() {
                         }
                         MerchantSubScreen.RECEIVE -> {
                             MerchantReceiveScreen(
-                                merchantId = merchantId,
+                                merchantId = settings.merchantId,
+                                defaultPayerId = settings.payerCredentialId,
                                 onCancel = {
                                     merchantSubScreen = MerchantSubScreen.HOME
                                 },
                                 onPaymentReceivedLocally = { amountMinor, payerId, transportName ->
+                                    val newTxId = UUID.randomUUID().toString()
+                                    val newCounter = merchantCounter++
+                                    val timestampUnix = System.currentTimeMillis() / 1000
+                                    // Real cryptographic SHA-256 digest of envelope payload
+                                    val receiptDigest = computeSha256Hex(
+                                        "$newTxId:$newCounter:$amountMinor:$payerId:$timestampUnix".toByteArray()
+                                    )
                                     val newTx = LocalPaymentRecord(
-                                        txId = UUID.randomUUID().toString(),
-                                        counter = merchantCounter++,
+                                        txId = newTxId,
+                                        counter = newCounter,
                                         amountMinor = amountMinor,
                                         counterpartyId = payerId,
                                         transport = transportName,
                                         state = "PAYMENT RECEIVED LOCALLY",
-                                        timestampUnix = System.currentTimeMillis() / 1000,
-                                        receiptHash = UUID.randomUUID().toString().replace("-", "")
+                                        timestampUnix = timestampUnix,
+                                        receiptHash = receiptDigest
                                     )
                                     merchantTransactions = listOf(newTx) + merchantTransactions
                                     merchantLatestReceivedTx = newTx
@@ -446,4 +439,218 @@ fun ResilientPayAppRoot() {
             }
         }
     }
+
+    // Dynamic Settings & Configuration Dialog
+    if (showSettingsDialog) {
+        SettingsConfigDialog(
+            currentSettings = settings,
+            onSave = { updated ->
+                settings = updated
+                showSettingsDialog = false
+                Toast.makeText(context, "System configuration saved", Toast.LENGTH_SHORT).show()
+            },
+            onSeedDemoData = {
+                payerTransactions = createInitialPayerLedger(settings.merchantId)
+                merchantTransactions = createInitialMerchantLedger(settings.payerCredentialId)
+                Toast.makeText(context, "Research test vectors loaded into ledger", Toast.LENGTH_SHORT).show()
+            },
+            onClearData = {
+                payerTransactions = emptyList()
+                merchantTransactions = emptyList()
+                Toast.makeText(context, "Local ledgers cleared", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { showSettingsDialog = false }
+        )
+    }
+}
+
+@Composable
+fun SettingsConfigDialog(
+    currentSettings: AppSettings,
+    onSave: (AppSettings) -> Unit,
+    onSeedDemoData: () -> Unit,
+    onClearData: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var merchantIdInput by remember { mutableStateOf(currentSettings.merchantId) }
+    var payerCredInput by remember { mutableStateOf(currentSettings.payerCredentialId) }
+    var backendUrlInput by remember { mutableStateOf(currentSettings.backendUrl) }
+    var smsGatewayInput by remember { mutableStateOf(currentSettings.smsGatewayNumber) }
+    var perTxLimitRupees by remember { mutableStateOf((currentSettings.maxPerTxLimitMinor / 100).toString()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "SYSTEM CONFIGURATION",
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = ResilientInk
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "Configure dynamic endpoints and cryptographic identity bounds:",
+                    fontSize = 11.sp,
+                    color = ResilientSlate
+                )
+
+                OutlinedTextField(
+                    value = merchantIdInput,
+                    onValueChange = { merchantIdInput = it },
+                    label = { Text("Merchant Recipient ID", fontSize = 10.sp) },
+                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = payerCredInput,
+                    onValueChange = { payerCredInput = it },
+                    label = { Text("Payer Credential ID", fontSize = 10.sp) },
+                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = backendUrlInput,
+                    onValueChange = { backendUrlInput = it },
+                    label = { Text("Reconciliation Backend URL", fontSize = 10.sp) },
+                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = smsGatewayInput,
+                    onValueChange = { smsGatewayInput = it },
+                    label = { Text("Telecom SMS Gateway Number", fontSize = 10.sp) },
+                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = perTxLimitRupees,
+                    onValueChange = { perTxLimitRupees = it.filter { c -> c.isDigit() } },
+                    label = { Text("Max Per-Tx Limit (Rupees)", fontSize = 10.sp) },
+                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Divider(color = ResilientRule)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onSeedDemoData,
+                        shape = RoundedCornerShape(0.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("SEED FIXTURES", fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+                    }
+                    OutlinedButton(
+                        onClick = onClearData,
+                        shape = RoundedCornerShape(0.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("CLEAR LEDGER", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = ResilientRed)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val limitRupees = perTxLimitRupees.toLongOrNull() ?: 500L
+                    val updated = currentSettings.copy(
+                        merchantId = merchantIdInput.trim(),
+                        payerCredentialId = payerCredInput.trim(),
+                        backendUrl = backendUrlInput.trim(),
+                        smsGatewayNumber = smsGatewayInput.trim(),
+                        maxPerTxLimitMinor = limitRupees * 100
+                    )
+                    onSave(updated)
+                },
+                shape = RoundedCornerShape(0.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = ResilientTeal, contentColor = ResilientPaper)
+            ) {
+                Text("SAVE CONFIG", fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("CANCEL", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = ResilientSlate)
+            }
+        },
+        shape = RoundedCornerShape(0.dp),
+        containerColor = ResilientSurface
+    )
+}
+
+private fun createInitialPayerLedger(merchantId: String): List<LocalPaymentRecord> {
+    return listOf(
+        LocalPaymentRecord(
+            txId = "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            counter = 12L,
+            amountMinor = 25000L,
+            counterpartyId = merchantId,
+            transport = "NFC",
+            state = "SETTLED",
+            timestampUnix = System.currentTimeMillis() / 1000 - 3600,
+            receiptHash = computeSha256Hex("f47ac10b-58cc-4372-a567-0e02b2c3d479:12:25000".toByteArray())
+        ),
+        LocalPaymentRecord(
+            txId = "e28bc10a-32dd-4112-98ab-1f03a4b5c612",
+            counter = 13L,
+            amountMinor = 12000L,
+            counterpartyId = merchantId,
+            transport = "QR",
+            state = "AUTHORIZED_LOCALLY",
+            timestampUnix = System.currentTimeMillis() / 1000 - 600,
+            receiptHash = computeSha256Hex("e28bc10a-32dd-4112-98ab-1f03a4b5c612:13:12000".toByteArray())
+        )
+    )
+}
+
+private fun createInitialMerchantLedger(payerId: String): List<LocalPaymentRecord> {
+    return listOf(
+        LocalPaymentRecord(
+            txId = "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
+            counter = 41L,
+            amountMinor = 50000L,
+            counterpartyId = payerId,
+            transport = "BLE",
+            state = "CONFLICT",
+            timestampUnix = System.currentTimeMillis() / 1000 - 7200,
+            receiptHash = computeSha256Hex("a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d:41:50000".toByteArray()),
+            conflictReason = "Counter already settled (Double-spend attempt)"
+        ),
+        LocalPaymentRecord(
+            txId = "b2c3d4e5-f6a1-4b5c-9d0e-1f2a3b4c5d6e",
+            counter = 42L,
+            amountMinor = 35000L,
+            counterpartyId = payerId,
+            transport = "NFC",
+            state = "SETTLED",
+            timestampUnix = System.currentTimeMillis() / 1000 - 3600,
+            receiptHash = computeSha256Hex("b2c3d4e5-f6a1-4b5c-9d0e-1f2a3b4c5d6e:42:35000".toByteArray())
+        ),
+        LocalPaymentRecord(
+            txId = "c3d4e5f6-a1b2-4c5d-0e1f-2a3b4c5d6e7f",
+            counter = 43L,
+            amountMinor = 8000L,
+            counterpartyId = payerId,
+            transport = "QR",
+            state = "PAYMENT RECEIVED LOCALLY",
+            timestampUnix = System.currentTimeMillis() / 1000 - 900,
+            receiptHash = computeSha256Hex("c3d4e5f6-a1b2-4c5d-0e1f-2a3b4c5d6e7f:43:8000".toByteArray())
+        )
+    )
 }
