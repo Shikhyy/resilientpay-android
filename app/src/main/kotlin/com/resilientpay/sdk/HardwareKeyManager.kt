@@ -43,6 +43,25 @@ class HardwareKeyManager : AndroidKeyManager {
     )
 
     companion object {
+        /**
+         * In-process encrypted-seed store.
+         *
+         * Security properties:
+         *  - Seeds are NEVER stored plaintext; each entry holds an AES-256-GCM ciphertext
+         *    encrypted under a hardware-backed key that lives exclusively inside AndroidKeyStore.
+         *  - The map is in-memory only (process lifetime). On process death all wrapped entries
+         *    are lost; the hardware AES key persists in AndroidKeyStore.
+         *  - This is intentional for the research prototype: production would persist
+         *    the ciphertext to encrypted SharedPreferences or the Android Keystore directly
+         *    using a Key Wrapping scheme upon app restart.
+         *  - This map MUST NOT be serialized, logged, or transmitted across process boundaries.
+         *  - ConcurrentHashMap is used because [sign] and [generateKey] may be called from
+         *    different threads (Rust FFI threadpool vs. Compose UI thread).
+         *
+         * Prototype residual risk: App restart requires re-provisioning the key (calling
+         * [generateKey] or [importSeed] again). This is acceptable for research; a production
+         * implementation would call [importSeed] with the persisted ciphertext on each cold start.
+         */
         private val keyStorage = ConcurrentHashMap<String, WrappedKeyEntry>()
     }
 
