@@ -31,6 +31,7 @@ class ResilientPayApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        HardwareKeyManager.initialize(this)
         provisionKeyIfNeeded()
     }
 

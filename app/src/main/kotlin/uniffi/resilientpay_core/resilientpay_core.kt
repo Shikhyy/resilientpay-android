@@ -746,6 +746,8 @@ internal open class UniffiVTableCallbackInterfaceAndroidKeyManager(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -774,6 +776,8 @@ internal interface UniffiLib : Library {
     ): Pointer
     fun uniffi_resilientpay_core_fn_method_resilientpayclient_create_transaction(`ptr`: Pointer,`txIdStr`: RustBuffer.ByValue,`credentialIdStr`: RustBuffer.ByValue,`payerKeyIdStr`: RustBuffer.ByValue,`merchantIdStr`: RustBuffer.ByValue,`amountMinor`: Long,`counter`: Long,`nonceBytes`: RustBuffer.ByValue,`createdAtUnix`: Long,`expiresAtUnix`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_resilientpay_core_fn_method_resilientpayclient_verify_transaction(`ptr`: Pointer,`envelopeJsonBytes`: RustBuffer.ByValue,`payerPublicKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     fun uniffi_resilientpay_core_fn_init_callback_vtable_androidkeymanager(`vtable`: UniffiVTableCallbackInterfaceAndroidKeyManager,
     ): Unit
     fun ffi_resilientpay_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -890,6 +894,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_resilientpay_core_checksum_method_resilientpayclient_create_transaction(
     ): Short
+    fun uniffi_resilientpay_core_checksum_method_resilientpayclient_verify_transaction(
+    ): Short
     fun uniffi_resilientpay_core_checksum_constructor_resilientpayclient_new(
     ): Short
     fun uniffi_resilientpay_core_checksum_method_androidkeymanager_get_public_key(
@@ -914,6 +920,9 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_resilientpay_core_checksum_method_resilientpayclient_create_transaction() != 41102.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_resilientpay_core_checksum_method_resilientpayclient_verify_transaction() != 63749.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_resilientpay_core_checksum_constructor_resilientpayclient_new() != 44204.toShort()) {
@@ -1015,6 +1024,29 @@ public object FfiConverterLong: FfiConverter<Long, Long> {
 
     override fun write(value: Long, buf: ByteBuffer) {
         buf.putLong(value)
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterBoolean: FfiConverter<Boolean, Byte> {
+    override fun lift(value: Byte): Boolean {
+        return value.toInt() != 0
+    }
+
+    override fun read(buf: ByteBuffer): Boolean {
+        return lift(buf.get())
+    }
+
+    override fun lower(value: Boolean): Byte {
+        return if (value) 1.toByte() else 0.toByte()
+    }
+
+    override fun allocationSize(value: Boolean) = 1UL
+
+    override fun write(value: Boolean, buf: ByteBuffer) {
+        buf.put(lower(value))
     }
 }
 
@@ -1263,6 +1295,12 @@ public interface ResilientPayClientInterface {
      */
     fun `createTransaction`(`txIdStr`: kotlin.String, `credentialIdStr`: kotlin.String, `payerKeyIdStr`: kotlin.String, `merchantIdStr`: kotlin.String, `amountMinor`: kotlin.ULong, `counter`: kotlin.ULong, `nonceBytes`: kotlin.ByteArray, `createdAtUnix`: kotlin.Long, `expiresAtUnix`: kotlin.Long): kotlin.ByteArray
     
+    /**
+     * Verifies a received payment envelope payload against a trusted payer public key.
+     * Returns true if the signature is valid.
+     */
+    fun `verifyTransaction`(`envelopeJsonBytes`: kotlin.ByteArray, `payerPublicKey`: kotlin.ByteArray): kotlin.Boolean
+    
     companion object
 }
 
@@ -1364,6 +1402,23 @@ open class ResilientPayClient: Disposable, AutoCloseable, ResilientPayClientInte
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_resilientpay_core_fn_method_resilientpayclient_create_transaction(
         it, FfiConverterString.lower(`txIdStr`),FfiConverterString.lower(`credentialIdStr`),FfiConverterString.lower(`payerKeyIdStr`),FfiConverterString.lower(`merchantIdStr`),FfiConverterULong.lower(`amountMinor`),FfiConverterULong.lower(`counter`),FfiConverterByteArray.lower(`nonceBytes`),FfiConverterLong.lower(`createdAtUnix`),FfiConverterLong.lower(`expiresAtUnix`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Verifies a received payment envelope payload against a trusted payer public key.
+     * Returns true if the signature is valid.
+     */
+    @Throws(FfiException::class)override fun `verifyTransaction`(`envelopeJsonBytes`: kotlin.ByteArray, `payerPublicKey`: kotlin.ByteArray): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_resilientpay_core_fn_method_resilientpayclient_verify_transaction(
+        it, FfiConverterByteArray.lower(`envelopeJsonBytes`),FfiConverterByteArray.lower(`payerPublicKey`),_status)
 }
     }
     )

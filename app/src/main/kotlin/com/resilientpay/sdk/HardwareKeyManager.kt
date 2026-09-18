@@ -63,16 +63,57 @@ class HardwareKeyManager : AndroidKeyManager {
          * implementation would call [importSeed] with the persisted ciphertext on each cold start.
          */
         private val keyStorage = ConcurrentHashMap<String, WrappedKeyEntry>()
+        @Volatile
+        private var appContext: android.content.Context? = null
+
+        /**
+         * Initialize application context for persisting hardware-wrapped key blobs across restarts.
+         */
+        fun initialize(context: android.content.Context) {
+            appContext = context.applicationContext
+        }
+
+        private fun persistEntry(keyId: String, entry: WrappedKeyEntry) {
+            appContext?.let { ctx ->
+                val prefs = ctx.getSharedPreferences("resilientpay_wrapped_keys", android.content.Context.MODE_PRIVATE)
+                val b64 = java.util.Base64.getEncoder()
+                prefs.edit()
+                    .putString("${keyId}_iv", b64.encodeToString(entry.iv))
+                    .putString("${keyId}_seed", b64.encodeToString(entry.encryptedSeed))
+                    .putString("${keyId}_pub", b64.encodeToString(entry.publicKeyBytes))
+                    .apply()
+            }
+        }
+
+        private fun loadPersistedEntry(keyId: String): WrappedKeyEntry? {
+            val ctx = appContext ?: return null
+            val prefs = ctx.getSharedPreferences("resilientpay_wrapped_keys", android.content.Context.MODE_PRIVATE)
+            val ivB64 = prefs.getString("${keyId}_iv", null) ?: return null
+            val seedB64 = prefs.getString("${keyId}_seed", null) ?: return null
+            val pubB64 = prefs.getString("${keyId}_pub", null) ?: return null
+            return try {
+                val b64 = java.util.Base64.getDecoder()
+                WrappedKeyEntry(
+                    iv = b64.decode(ivB64),
+                    encryptedSeed = b64.decode(seedB64),
+                    publicKeyBytes = b64.decode(pubB64)
+                )
+            } catch (e: Exception) {
+                null
+            }
+        }
     }
 
     override fun getPublicKey(keyId: String): ByteArray {
         val entry = keyStorage[keyId]
+            ?: loadPersistedEntry(keyId)?.also { keyStorage[keyId] = it }
             ?: throw FfiException.KeyUnavailable("Key not found in Keystore: $keyId")
         return entry.publicKeyBytes.copyOf()
     }
 
     override fun sign(keyId: String, payload: ByteArray): ByteArray {
         val entry = keyStorage[keyId]
+            ?: loadPersistedEntry(keyId)?.also { keyStorage[keyId] = it }
             ?: throw FfiException.KeyUnavailable("Private key not found: $keyId")
 
         val aesKey = try {
@@ -160,11 +201,13 @@ class HardwareKeyManager : AndroidKeyManager {
             val encryptedSeed = cipher.doFinal(seed)
 
             // 6. Store wrapped entry
-            keyStorage[keyId] = WrappedKeyEntry(
+            val entry = WrappedKeyEntry(
                 iv = iv,
                 encryptedSeed = encryptedSeed,
                 publicKeyBytes = publicKeyBytes,
             )
+            keyStorage[keyId] = entry
+            persistEntry(keyId, entry)
             return true
         } finally {
             Arrays.fill(seed, 0.toByte())
@@ -203,11 +246,13 @@ class HardwareKeyManager : AndroidKeyManager {
         val iv = cipher.iv
         val encryptedSeed = cipher.doFinal(seed)
 
-        keyStorage[keyId] = WrappedKeyEntry(
+        val entry = WrappedKeyEntry(
             iv = iv,
             encryptedSeed = encryptedSeed,
             publicKeyBytes = publicKeyBytes,
         )
+        keyStorage[keyId] = entry
+        persistEntry(keyId, entry)
         return true
     }
 }

@@ -216,6 +216,21 @@ class ResilientPayClient(
         }
     }
 
+    /**
+     * Verifies a received payment envelope payload against the payer's public key.
+     * Used by the merchant to assert cryptographic validity before accepting offline funds.
+     */
+    fun verifyTransaction(
+        envelopeJsonBytes: ByteArray,
+        payerPublicKey: ByteArray
+    ): Boolean {
+        return try {
+            nativeClient.verifyTransaction(envelopeJsonBytes, payerPublicKey)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     override fun close() {
         nativeClient.close()
     }
