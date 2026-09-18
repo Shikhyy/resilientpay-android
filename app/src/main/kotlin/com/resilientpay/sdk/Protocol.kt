@@ -179,6 +179,33 @@ class ResilientPayClient(
     private val nativeClient = RustClient(keyManager)
 
     /**
+     * Produces a signed CBOR payment envelope via the Rust crypto core.
+     */
+    fun createTransactionBytes(
+        txIdStr: String,
+        credentialIdStr: String,
+        payerKeyIdStr: String,
+        merchantIdStr: String,
+        amountMinor: Long,
+        counter: Long,
+        nonceBytes: ByteArray,
+        createdAtUnix: Long,
+        expiresAtUnix: Long
+    ): ByteArray {
+        return nativeClient.createTransaction(
+            txIdStr = txIdStr,
+            credentialIdStr = credentialIdStr,
+            payerKeyIdStr = payerKeyIdStr,
+            merchantIdStr = merchantIdStr,
+            amountMinor = amountMinor.toULong(),
+            counter = counter.toULong(),
+            nonceBytes = nonceBytes,
+            createdAtUnix = createdAtUnix,
+            expiresAtUnix = expiresAtUnix
+        )
+    }
+
+    /**
      * Orchestrates a full transaction:
      * 1. Calls Rust via FFI to canonicalize bytes
      * 2. Rust calls back into Android Keystore to sign
@@ -197,13 +224,13 @@ class ResilientPayClient(
         expiresAtUnix: Long
     ): TransportResult {
         return try {
-            val signedEnvelopeBytes = nativeClient.createTransaction(
+            val signedEnvelopeBytes = createTransactionBytes(
                 txIdStr = txIdStr,
                 credentialIdStr = credentialIdStr,
                 payerKeyIdStr = payerKeyIdStr,
                 merchantIdStr = merchantIdStr,
-                amountMinor = amountMinor.toULong(),
-                counter = counter.toULong(),
+                amountMinor = amountMinor,
+                counter = counter,
                 nonceBytes = nonceBytes,
                 createdAtUnix = createdAtUnix,
                 expiresAtUnix = expiresAtUnix
