@@ -24,8 +24,21 @@ import com.resilientpay.app.ui.merchant.*
 import com.resilientpay.app.ui.model.*
 import com.resilientpay.app.ui.payer.*
 import com.resilientpay.app.ui.theme.*
+import com.resilientpay.sdk.BleAdapter
+import com.resilientpay.sdk.HardwareKeyManager
+import com.resilientpay.sdk.InternetAdapter
+import com.resilientpay.sdk.NfcAdapter
+import com.resilientpay.sdk.QrAdapter
+import com.resilientpay.sdk.ResilientPayClient
+import com.resilientpay.sdk.SmsAdapter
+import com.resilientpay.sdk.TransportResult
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.security.SecureRandom
 import java.util.UUID
+
 
 enum class UserRole {
     PAYER,
@@ -63,10 +76,13 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ResilientPayAppRoot() {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     // Global Dynamic Configuration & Settings
     var settings by remember { mutableStateOf(AppSettings()) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    // Prevents double-submit while FFI is in-flight
+    var transactionInProgress by remember { mutableStateOf(false) }
 
     // Navigation & Connectivity State
     var currentRole by remember { mutableStateOf(UserRole.PAYER) }
@@ -327,34 +343,99 @@ fun ResilientPayAppRoot() {
                             merchantId = targetMerchantId,
                             transport = transport,
                             onConfirm = {
-                                payerOfflineBalance -= amountMinor
+                                if (transactionInProgress) return@PaymentAuthorizeDialog
+                                transactionInProgress = true
+
+                                // Snapshot counter before launch; post-increment atomically.
                                 val newTxId = UUID.randomUUID().toString()
                                 val newCounter = payerCounter++
-                                val timestampUnix = System.currentTimeMillis() / 1000
-                                // Real cryptographic SHA-256 digest of envelope payload
-                                val receiptDigest = computeSha256Hex(
-                                    "$newTxId:$newCounter:$amountMinor:$targetMerchantId:$timestampUnix".toByteArray()
-                                )
-                                val newTx = LocalPaymentRecord(
-                                    txId = newTxId,
-                                    counter = newCounter,
-                                    amountMinor = amountMinor,
-                                    counterpartyId = targetMerchantId,
-                                    transport = transport.protocolName,
-                                    state = "AUTHORIZED_LOCALLY",
-                                    timestampUnix = timestampUnix,
-                                    receiptHash = receiptDigest
-                                )
-                                payerTransactions = listOf(newTx) + payerTransactions
-                                payerPendingTx = newTx
+                                val createdAtUnix = System.currentTimeMillis() / 1000
+                                val expiresAtUnix = createdAtUnix + 3600L
+
+                                // Generate 16-byte cryptographically secure nonce.
+                                val nonceBytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
+
+                                // Debit balance optimistically; restored on error.
+                                payerOfflineBalance -= amountMinor
+                                // Dismiss the dialog immediately so UI is responsive.
                                 authorizingDialogData = null
-                                payerSubScreen = PayerSubScreen.RECEIPT
+
+                                coroutineScope.launch {
+                                    // Build the transport adapter on the UI thread (stateless objects).
+                                    val chosenTransport = when (transport.protocolName) {
+                                        "INTERNET" -> InternetAdapter(settings.backendUrl)
+                                        "NFC"      -> NfcAdapter()
+                                        "BLE"      -> BleAdapter()
+                                        "QR"       -> QrAdapter()
+                                        "SMS"      -> SmsAdapter(settings.smsGatewayNumber)
+                                        else       -> InternetAdapter(settings.backendUrl)
+                                    }
+
+                                    // FFI + transport on IO — never blocks the main thread.
+                                    val result = withContext(Dispatchers.IO) {
+                                        ResilientPayClient(
+                                            transport = chosenTransport,
+                                            keyManager = HardwareKeyManager()
+                                        ).use { client ->
+                                            client.createAndSubmitTransaction(
+                                                txIdStr          = newTxId,
+                                                credentialIdStr  = settings.payerCredentialId,
+                                                payerKeyIdStr    = ResilientPayApplication.PAYER_KEY_ALIAS,
+                                                merchantIdStr    = targetMerchantId,
+                                                amountMinor      = amountMinor,
+                                                counter          = newCounter,
+                                                nonceBytes       = nonceBytes,
+                                                createdAtUnix    = createdAtUnix,
+                                                expiresAtUnix    = expiresAtUnix
+                                            )
+                                        }
+                                    }
+
+                                    // Back on main thread: update state based on result.
+                                    transactionInProgress = false
+                                    when (result) {
+                                        is TransportResult.Error -> {
+                                            // Restore balance — the payment was not delivered.
+                                            payerOfflineBalance += amountMinor
+                                            // Roll back counter increment.
+                                            payerCounter = newCounter
+                                            Toast.makeText(
+                                                context,
+                                                "Payment failed: ${result.reason}",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                        is TransportResult.Success -> {
+                                            // Receipt hash = SHA-256 of the actual signed envelope bytes.
+                                            val receiptDigest = computeSha256Hex(result.receiptBytes)
+                                            val txState = if (transport.protocolName == "INTERNET") {
+                                                "PENDING_RECONCILIATION"
+                                            } else {
+                                                "AUTHORIZED_LOCALLY"
+                                            }
+                                            val newTx = LocalPaymentRecord(
+                                                txId          = newTxId,
+                                                counter       = newCounter,
+                                                amountMinor   = amountMinor,
+                                                counterpartyId = targetMerchantId,
+                                                transport     = transport.protocolName,
+                                                state         = txState,
+                                                timestampUnix = createdAtUnix,
+                                                receiptHash   = receiptDigest
+                                            )
+                                            payerTransactions = listOf(newTx) + payerTransactions
+                                            payerPendingTx = newTx
+                                            payerSubScreen = PayerSubScreen.RECEIPT
+                                        }
+                                    }
+                                }
                             },
                             onDismiss = {
                                 authorizingDialogData = null
                             }
                         )
                     }
+
                 }
 
                 UserRole.MERCHANT -> {
