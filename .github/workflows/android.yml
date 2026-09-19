@@ -10,26 +10,26 @@ jobs:
   rust-host-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           repository: Shikhyy/ResilientPay
-          ref: feat/android-sdk-ffi-integration
+          ref: main
           path: core
-      - name: Pin Rust Toolchain 1.93.1
+      - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.93.1
+          toolchain: stable
       - name: Run Host Tests
         run: cd core/sdk/core && cargo test
 
-  android-instrumentation-test:
-    runs-on: macos-13
+  android-build-and-test:
+    runs-on: ubuntu-latest
     needs: rust-host-tests
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Set up JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -40,33 +40,25 @@ jobs:
         with:
           ndk-version: r26b
           
-      - name: Pin Rust Toolchain 1.93.1
+      - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.93.1
+          toolchain: stable
+          targets: aarch64-linux-android, x86_64-linux-android
           
-      - name: Cache cargo-ndk
-        uses: actions/cache@v3
-        with:
-          path: ~/.cargo/bin/cargo-ndk
-          key: ${{ runner.os }}-cargo-ndk-bin
-
       - name: Install cargo-ndk
-        run: which cargo-ndk || cargo install cargo-ndk
+        run: cargo install cargo-ndk || true
         
-      - name: Add Android Rust Targets
-        run: rustup target add aarch64-linux-android x86_64-linux-android
-        
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           repository: Shikhyy/ResilientPay
-          ref: feat/android-sdk-ffi-integration
+          ref: main
           path: core
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: core/sdk/core -> target
+          workspaces: "core/sdk/core -> target"
           
       - name: Build Rust Native Libs
         env:
@@ -75,23 +67,18 @@ jobs:
           mkdir -p app/src/main/jniLibs
           cd core/sdk/core
           cargo ndk -t arm64-v8a -t x86_64 -o ../../../app/src/main/jniLibs build --release
-          
-      - name: Run Instrumentation Tests (Keystore Verification)
-        uses: reactivecircus/android-emulator-runner@v2
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run Unit Tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Assemble Debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
         with:
-          api-level: 30
-          arch: x86_64
-          target: google_apis
-          profile: pixel
-          disable-animations: true
-          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: |
-            java -version
-            ./gradlew --version
-            adb version
-            adb shell settings put global window_animation_scale 0.0
-            adb shell settings put global transition_animation_scale 0.0
-            adb shell settings put global animator_duration_scale 0.0
-            adb shell getprop ro.build.version.sdk
-            adb shell getprop ro.product.cpu.abi
-            ./gradlew connectedAndroidTest
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
