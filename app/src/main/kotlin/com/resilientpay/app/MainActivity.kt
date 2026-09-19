@@ -136,15 +136,18 @@ fun ResilientPayAppRoot() {
                             }
 
                             if (isValid) {
-                                val newTxId = UUID.randomUUID().toString()
+                                val parsed = parseEnvelopePayload(envelopeBytes)
+                                val txId = parsed?.txId ?: UUID.randomUUID().toString()
+                                val payerId = parsed?.credentialId ?: settings.payerCredentialId
+                                val amount = parsed?.amountMinor ?: 15000L
                                 val newCounter = merchantCounter++
                                 val timestampUnix = System.currentTimeMillis() / 1000
                                 val receiptDigest = computeSha256Hex(envelopeBytes)
                                 val newTx = LocalPaymentRecord(
-                                    txId = newTxId,
+                                    txId = txId,
                                     counter = newCounter,
-                                    amountMinor = 15000L,
-                                    counterpartyId = settings.payerCredentialId,
+                                    amountMinor = amount,
+                                    counterpartyId = payerId,
                                     transport = "NFC",
                                     state = "PAYMENT RECEIVED LOCALLY",
                                     timestampUnix = timestampUnix,
